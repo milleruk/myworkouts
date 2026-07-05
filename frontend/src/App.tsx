@@ -1,0 +1,59 @@
+import { useEffect, useState } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { getMe, isAuthenticated, logout, type Me } from './api'
+import { AppShell } from './components/AppShell'
+import { AuthForm } from './components/AuthForm'
+import { Dashboard } from './pages/Dashboard'
+import { Settings } from './pages/Settings'
+import { ComingSoon } from './pages/ComingSoon'
+
+function App() {
+  const [me, setMe] = useState<Me | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const loadMe = () => {
+    if (!isAuthenticated()) {
+      setMe(null)
+      setLoading(false)
+      return
+    }
+    getMe()
+      .then(setMe)
+      .catch(() => setMe(null))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(loadMe, [])
+
+  if (loading) return null
+
+  if (!me) {
+    return <AuthForm onAuthenticated={loadMe} />
+  }
+
+  const handleLogout = () => {
+    logout()
+    setMe(null)
+  }
+
+  return (
+    <Routes>
+      <Route element={<AppShell me={me} onLogout={handleLogout} />}>
+        <Route index element={<Dashboard me={me} />} />
+        <Route
+          path="activities"
+          element={<ComingSoon title="Activities" phase="Phase 3 (full import + scheduled sync)" />}
+        />
+        <Route path="gear" element={<ComingSoon title="Gear" phase="Phase 3 (full import + scheduled sync)" />} />
+        <Route
+          path="garmin-account"
+          element={<ComingSoon title="Garmin Account" phase="Phase 2 (Garmin connect flow)" />}
+        />
+        <Route path="settings" element={<Settings me={me} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  )
+}
+
+export default App

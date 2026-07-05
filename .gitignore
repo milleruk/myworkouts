@@ -1,0 +1,15 @@
+.env
+*.pyc
+__pycache__/
+backend/.venv/
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+frontend/node_modules/
+frontend/dist/
+
+# reference clones for architecture research only, not part of the shipped app
+references/
+
+# local Claude Code tooling config, not project source
+.claude/

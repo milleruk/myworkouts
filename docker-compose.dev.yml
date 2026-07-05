@@ -1,0 +1,55 @@
+services:
+  django:
+    command: >
+      sh -c "python manage.py migrate --settings=config.settings.dev &&
+             python manage.py runserver 0.0.0.0:8000"
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      DJANGO_DEBUG: "True"
+    volumes:
+      - ./backend:/app
+      - media:/app/media
+    ports:
+      - "8000:8000"
+
+  celery-worker:
+    command: celery -A config worker -Q celery,celery_build --pool=solo --loglevel=info
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+    volumes:
+      - ./backend:/app
+      - media:/app/media
+
+  celery-garmin-auth:
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+    volumes:
+      - ./backend:/app
+
+  celery-beat:
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    command: npm run dev -- --host
+    environment:
+      VITE_PROXY_TARGET: http://django:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - django
+    networks:
+      - default
+    labels:
+      # explicitly override (compose merges label maps across files, it does
+      # not clear keys set in docker-compose.yml) so Traefik never routes to
+      # the dev vite server, which also isn't attached to the t3_proxy network.
+      traefik.enable: "false"

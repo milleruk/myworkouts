@@ -1,0 +1,127 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-garmin}
+      POSTGRES_USER: ${POSTGRES_USER:-garmin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-garmin}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-garmin}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  django:
+    build: ./backend
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate --settings=config.settings.prod &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4"
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      POSTGRES_HOST: postgres
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - media:/app/media
+
+  celery-worker:
+    build: ./backend
+    restart: unless-stopped
+    command: celery -A config worker -Q celery,celery_build --concurrency=4 --loglevel=info
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      POSTGRES_HOST: postgres
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      django:
+        condition: service_started
+    volumes:
+      - media:/app/media
+
+  celery-garmin-auth:
+    build: ./backend
+    restart: unless-stopped
+    # concurrency=1 / solo pool / single replica ONLY: pending Garmin MFA logins
+    # live in this process's memory (see references note in the project plan).
+    # Do not scale this service or raise its concurrency.
+    command: celery -A config worker -Q garmin_auth --concurrency=1 --pool=solo --loglevel=info
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      POSTGRES_HOST: postgres
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      django:
+        condition: service_started
+    deploy:
+      replicas: 1
+
+  celery-beat:
+    build: ./backend
+    restart: unless-stopped
+    command: celery -A config beat --scheduler django_celery_beat.schedulers:DatabaseScheduler --loglevel=info
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      POSTGRES_HOST: postgres
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      django:
+        condition: service_started
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - django
+    networks:
+      - default
+      - t3_proxy
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.garmin-rtr.entrypoints: websecure
+      traefik.http.routers.garmin-rtr.middlewares: chain-no-auth@file
+      traefik.http.routers.garmin-rtr.rule: Host(`garmin.haresign.dev`)
+      traefik.http.routers.garmin-rtr.service: garmin-svc
+      traefik.http.services.garmin-svc.loadbalancer.server.port: "80"
+
+networks:
+  t3_proxy:
+    external: true
+
+volumes:
+  pgdata:
+  redisdata:
+  media:
