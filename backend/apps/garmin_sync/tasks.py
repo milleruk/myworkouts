@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timezone as dt_timezone
+from datetime import date, datetime, timedelta
+from datetime import timezone as dt_timezone
 
 from celery import shared_task
 from django.utils import timezone
@@ -11,6 +12,8 @@ from garminconnect import (
 )
 
 from apps.activities.models import Activity
+from apps.gear.models import Gear
+from apps.health.models import BodyComposition, DailyStats
 
 from . import crypto
 from .models import GarminAccount, SyncLog
@@ -18,10 +21,17 @@ from .services import pending_logins
 
 logger = logging.getLogger(__name__)
 
-# Safety cap on a Phase 2 manual full backfill; incremental, unbounded sync
-# lands in Phase 3.
+# Safety cap on a first-ever full backfill. Later syncs are incremental and
+# don't need this, since they only fetch what's new since the last sync.
 MAX_BACKFILL_ACTIVITIES = 2000
 ACTIVITIES_PAGE_SIZE = 100
+
+# How far back to backfill health/body-composition data the first time an
+# account connects. Chosen to give meaningful recent trends without a slow
+# first sync or years of old data.
+HEALTH_BACKFILL_DAYS = 90
+
+ACTIVITY_SYNC_OVERLAP_DAYS = 2
 
 
 @shared_task
@@ -134,9 +144,6 @@ def _client_for_account(account: GarminAccount) -> Garmin:
 @shared_task(bind=True, max_retries=3, default_retry_delay=300)
 def sync_garmin_account(self, account_id: int):
     account = GarminAccount.objects.get(id=account_id)
-    sync_log = SyncLog.objects.create(
-        garmin_account=account, task_type=SyncLog.TaskType.ACTIVITIES
-    )
 
     try:
         client = _client_for_account(account)
@@ -144,20 +151,63 @@ def sync_garmin_account(self, account_id: int):
         account.status = GarminAccount.Status.NEEDS_REAUTH
         account.last_error = "Reauthentication with MFA required."
         account.save(update_fields=["status", "last_error", "updated_at"])
-        sync_log.status = SyncLog.Status.FAILED
-        sync_log.error_message = account.last_error
-        sync_log.finished_at = timezone.now()
-        sync_log.save()
+        SyncLog.objects.create(
+            garmin_account=account,
+            task_type=SyncLog.TaskType.ACTIVITIES,
+            status=SyncLog.Status.FAILED,
+            error_message=account.last_error,
+            finished_at=timezone.now(),
+        )
         return
     except GarminConnectTooManyRequestsError as exc:
-        sync_log.status = SyncLog.Status.FAILED
-        sync_log.error_message = str(exc)
-        sync_log.finished_at = timezone.now()
-        sync_log.save()
+        SyncLog.objects.create(
+            garmin_account=account,
+            task_type=SyncLog.TaskType.ACTIVITIES,
+            status=SyncLog.Status.FAILED,
+            error_message=str(exc),
+            finished_at=timezone.now(),
+        )
         raise self.retry(exc=exc)
 
+    any_failed = False
+    for task_type, import_fn in (
+        (SyncLog.TaskType.ACTIVITIES, _import_activities),
+        (SyncLog.TaskType.DAILY_HEALTH, _import_daily_health),
+        (SyncLog.TaskType.BODY_COMPOSITION, _import_body_composition),
+        (SyncLog.TaskType.GEAR, _import_gear),
+    ):
+        sync_log = SyncLog.objects.create(garmin_account=account, task_type=task_type)
+        try:
+            imported = import_fn(client, account)
+            sync_log.status = SyncLog.Status.SUCCESS
+            sync_log.records_imported = imported
+        except GarminConnectTooManyRequestsError as exc:
+            any_failed = True
+            sync_log.status = SyncLog.Status.FAILED
+            sync_log.error_message = str(exc)
+            logger.warning("Rate limited during %s import for account %s", task_type, account.id)
+        except Exception as exc:  # noqa: BLE001 - one failing import shouldn't stop the others
+            any_failed = True
+            sync_log.status = SyncLog.Status.FAILED
+            sync_log.error_message = str(exc)
+            logger.exception("%s import failed for account %s", task_type, account.id)
+        sync_log.finished_at = timezone.now()
+        sync_log.save()
+
+    account.status = GarminAccount.Status.CONNECTED
+    account.last_synced_at = timezone.now()
+    account.last_error = "Some data failed to sync; see recent syncs." if any_failed else ""
+    account.save(update_fields=["status", "last_synced_at", "last_error", "updated_at"])
+
+
+def _import_activities(client: Garmin, account: GarminAccount) -> int:
+    last_activity = (
+        Activity.objects.filter(user_id=account.user_id).order_by("-start_time_local").first()
+    )
     imported = 0
-    try:
+
+    if last_activity is None:
+        # First-ever sync: capped full backfill via the paginated list endpoint.
         start = 0
         while start < MAX_BACKFILL_ACTIVITIES:
             page = client.get_activities(start, ACTIVITIES_PAGE_SIZE)
@@ -167,30 +217,152 @@ def sync_garmin_account(self, account_id: int):
                 _upsert_activity(account, item)
                 imported += 1
             start += ACTIVITIES_PAGE_SIZE
+        return imported
 
-        account.status = GarminAccount.Status.CONNECTED
-        account.last_synced_at = timezone.now()
-        account.last_error = ""
-        account.save(update_fields=["status", "last_synced_at", "last_error", "updated_at"])
+    # Incremental: only fetch since the last known activity, with a small
+    # overlap buffer to absorb activities uploaded late by a device that
+    # was offline (e.g. a watch synced days after the activity happened).
+    startdate = (last_activity.start_time_local.date() - timedelta(days=ACTIVITY_SYNC_OVERLAP_DAYS)).isoformat()
+    enddate = date.today().isoformat()
+    items = client.get_activities_by_date(startdate, enddate, sortorder="asc")
+    for item in items:
+        _upsert_activity(account, item)
+        imported += 1
+    return imported
 
-        sync_log.status = SyncLog.Status.SUCCESS
-        sync_log.records_imported = imported
-        sync_log.finished_at = timezone.now()
-        sync_log.save()
-    except GarminConnectTooManyRequestsError as exc:
-        sync_log.status = SyncLog.Status.PARTIAL
-        sync_log.records_imported = imported
-        sync_log.error_message = str(exc)
-        sync_log.finished_at = timezone.now()
-        sync_log.save()
-        raise self.retry(exc=exc)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Garmin activity sync failed for account %s", account.id)
-        sync_log.status = SyncLog.Status.FAILED
-        sync_log.records_imported = imported
-        sync_log.error_message = str(exc)
-        sync_log.finished_at = timezone.now()
-        sync_log.save()
+
+def _import_daily_health(client: Garmin, account: GarminAccount) -> int:
+    last = DailyStats.objects.filter(user_id=account.user_id).order_by("-date").first()
+    start = last.date + timedelta(days=1) if last else date.today() - timedelta(days=HEALTH_BACKFILL_DAYS)
+    today = date.today()
+
+    imported = 0
+    current = start
+    while current <= today:
+        cdate = current.isoformat()
+        try:
+            summary = client.get_user_summary(cdate)
+        except Exception:  # noqa: BLE001 - no data for this day is common/expected
+            summary = None
+        if summary:
+            _upsert_daily_stats(account, current, summary, client)
+            imported += 1
+        current += timedelta(days=1)
+    return imported
+
+
+def _upsert_daily_stats(account: GarminAccount, day: date, summary: dict, client: Garmin) -> None:
+    cdate = day.isoformat()
+
+    hrv_status = ""
+    hrv_last_night_avg = None
+    try:
+        hrv = client.get_hrv_data(cdate)
+        if hrv and hrv.get("hrvSummary"):
+            hrv_status = hrv["hrvSummary"].get("status") or ""
+            hrv_last_night_avg = hrv["hrvSummary"].get("lastNightAvg")
+    except Exception:  # noqa: BLE001 - HRV isn't available for every day/device
+        pass
+
+    training_readiness_score = None
+    try:
+        readiness = client.get_training_readiness(cdate)
+        if readiness:
+            training_readiness_score = readiness[0].get("score")
+    except Exception:  # noqa: BLE001
+        pass
+
+    DailyStats.objects.update_or_create(
+        user_id=account.user_id,
+        date=day,
+        defaults={
+            "total_steps": _none_if_negative(summary.get("totalSteps")),
+            "resting_hr": _none_if_negative(summary.get("restingHeartRate")),
+            "total_calories": _none_if_negative(summary.get("totalKilocalories")),
+            "active_calories": _none_if_negative(summary.get("activeKilocalories")),
+            "sleep_seconds": _none_if_negative(summary.get("sleepingSeconds")),
+            "stress_avg": _none_if_negative(summary.get("averageStressLevel")),
+            "body_battery_high": _none_if_negative(summary.get("bodyBatteryHighestValue")),
+            "body_battery_low": _none_if_negative(summary.get("bodyBatteryLowestValue")),
+            "hrv_status": hrv_status,
+            "hrv_last_night_avg": hrv_last_night_avg,
+            "training_readiness_score": _none_if_negative(training_readiness_score),
+            "raw": summary,
+        },
+    )
+
+
+def _import_body_composition(client: Garmin, account: GarminAccount) -> int:
+    last = BodyComposition.objects.filter(user_id=account.user_id).order_by("-recorded_at").first()
+    startdate = (
+        (last.recorded_at.date() + timedelta(days=1))
+        if last
+        else date.today() - timedelta(days=HEALTH_BACKFILL_DAYS)
+    )
+    enddate = date.today()
+    if startdate > enddate:
+        return 0
+
+    data = client.get_body_composition(startdate.isoformat(), enddate.isoformat())
+    entries = (data or {}).get("dateWeightList") or []
+
+    imported = 0
+    for entry in entries:
+        weight_g = entry.get("weight")
+        if weight_g is None:
+            continue
+        timestamp_ms = entry.get("timestampGMT") or entry.get("date")
+        recorded_at = _from_epoch_ms(timestamp_ms) if timestamp_ms else None
+        if recorded_at is None:
+            continue
+        BodyComposition.objects.update_or_create(
+            user_id=account.user_id,
+            recorded_at=recorded_at,
+            defaults={
+                "weight_kg": weight_g / 1000,
+                "body_fat_pct": entry.get("bodyFat"),
+                "muscle_mass_kg": (entry.get("muscleMass") or 0) / 1000 or None,
+                "bone_mass_kg": (entry.get("boneMass") or 0) / 1000 or None,
+                "bmi": entry.get("bmi"),
+                "raw": entry,
+            },
+        )
+        imported += 1
+    return imported
+
+
+def _import_gear(client: Garmin, account: GarminAccount) -> int:
+    device = client.get_device_last_used()
+    profile_number = device.get("userProfileNumber") if device else None
+    if not profile_number:
+        return 0
+
+    items = client.get_gear(profile_number) or []
+    imported = 0
+    for item in items:
+        uuid = item.get("uuid")
+        if not uuid:
+            continue
+        stats = {}
+        try:
+            stats = client.get_gear_stats(uuid) or {}
+        except Exception:  # noqa: BLE001 - stats can 404 for retired/removed gear
+            pass
+
+        name = item.get("displayName") or item.get("customMakeModel") or item.get("gearModelName") or "Gear"
+        Gear.objects.update_or_create(
+            user_id=account.user_id,
+            garmin_gear_uuid=uuid,
+            defaults={
+                "name": name,
+                "gear_type": item.get("gearTypeName", ""),
+                "is_retired": item.get("gearStatusName") == "retired",
+                "total_distance_m": stats.get("totalDistance") or 0,
+                "raw": item,
+            },
+        )
+        imported += 1
+    return imported
 
 
 def _upsert_activity(account: GarminAccount, item: dict) -> None:
@@ -222,3 +394,17 @@ def _parse_garmin_datetime(value: str | None):
     # Garmin returns "YYYY-MM-DD HH:MM:SS" (space-separated, no offset).
     dt = datetime.strptime(value.replace("T", " ").split(".")[0], "%Y-%m-%d %H:%M:%S")
     return dt.replace(tzinfo=dt_timezone.utc)
+
+
+def _from_epoch_ms(ms: int):
+    return datetime.fromtimestamp(ms / 1000, tz=dt_timezone.utc)
+
+
+def _none_if_negative(value):
+    """Garmin uses -1 (and similar negative sentinels) to mean "no data
+    available yet" for several daily metrics, e.g. today's stress average
+    before the day is over. Our fields are non-negative, so normalize those
+    sentinels to None rather than let them hit a DB check constraint."""
+    if value is None:
+        return None
+    return value if value >= 0 else None

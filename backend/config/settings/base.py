@@ -22,6 +22,8 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.accounts",
     "apps.activities",
+    "apps.health",
+    "apps.gear",
     "apps.garmin_sync",
 ]
 
