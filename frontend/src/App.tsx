@@ -8,6 +8,9 @@ import { Settings } from './pages/Settings'
 import { GarminAccount } from './pages/GarminAccount'
 import { Activities } from './pages/Activities'
 import { Gear } from './pages/Gear'
+import { ActivityDetail } from './pages/ActivityDetail'
+import { GearDetail } from './pages/GearDetail'
+import { Rewind } from './pages/Rewind'
 
 function App() {
   const [me, setMe] = useState<Me | null>(null)
@@ -43,7 +46,10 @@ function App() {
       <Route element={<AppShell me={me} onLogout={handleLogout} />}>
         <Route index element={<Dashboard me={me} />} />
         <Route path="activities" element={<Activities />} />
+        <Route path="activities/:id" element={<ActivityDetail />} />
         <Route path="gear" element={<Gear />} />
+        <Route path="gear/:id" element={<GearDetail />} />
+        <Route path="rewind" element={<Rewind />} />
         <Route path="garmin-account" element={<GarminAccount />} />
         <Route path="settings" element={<Settings me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,18 +1,8 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getActivities, type Activity } from '../api'
 import { Card } from '../components/Card'
-
-function formatDuration(seconds: number | null) {
-  if (!seconds) return '—'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.round((seconds % 3600) / 60)
-  return h > 0 ? `${h}h ${m}m` : `${m}m`
-}
-
-function formatDistance(meters: number | null) {
-  if (!meters) return '—'
-  return `${(meters / 1000).toFixed(2)} km`
-}
+import { formatDistance, formatDuration } from '../format'
 
 export function Activities() {
   const [data, setData] = useState<{ results: Activity[]; count: number } | null>(null)
@@ -81,14 +71,21 @@ export function Activities() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {data.results.map((a) => (
-                  <tr key={a.id}>
+                  <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                     <td className="py-2 pr-4 whitespace-nowrap text-slate-500 dark:text-slate-400">
                       {new Date(a.start_time_local).toLocaleDateString()}
                     </td>
                     <td className="py-2 pr-4 whitespace-nowrap text-slate-500 dark:text-slate-400">
                       {a.activity_type}
                     </td>
-                    <td className="py-2 pr-4 text-slate-900 dark:text-slate-100">{a.name || '—'}</td>
+                    <td className="py-2 pr-4">
+                      <Link
+                        to={`/activities/${a.id}`}
+                        className="text-slate-900 hover:underline dark:text-slate-100"
+                      >
+                        {a.name || '—'}
+                      </Link>
+                    </td>
                     <td className="py-2 pr-4 whitespace-nowrap text-slate-500 dark:text-slate-400">
                       {formatDistance(a.distance_m)}
                     </td>

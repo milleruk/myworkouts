@@ -19,3 +19,8 @@ class ActivitySerializer(serializers.ModelSerializer):
             "max_hr",
             "calories",
         ]
+
+
+class ActivityDetailSerializer(ActivitySerializer):
+    class Meta(ActivitySerializer.Meta):
+        fields = ActivitySerializer.Meta.fields + ["raw_summary"]

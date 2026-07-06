@@ -213,3 +213,170 @@ export async function getGear(): Promise<GearItem[]> {
   const data = await res.json()
   return data.results ?? data
 }
+
+export interface ActivityDetail extends Activity {
+  raw_summary: Record<string, unknown>
+}
+
+export async function getActivity(id: number): Promise<ActivityDetail> {
+  const res = await apiFetch(`/activities/${id}/`)
+  if (!res.ok) throw new Error('Failed to load activity')
+  return res.json()
+}
+
+export async function getGearItem(id: number): Promise<GearItem> {
+  const res = await apiFetch(`/gear/${id}/`)
+  if (!res.ok) throw new Error('Failed to load gear item')
+  return res.json()
+}
+
+export interface GearMaintenanceEntry {
+  id: number
+  description: string
+  performed_at: string
+  distance_at_service_m: number | null
+  notes: string
+}
+
+export async function getGearMaintenance(gearId: number): Promise<GearMaintenanceEntry[]> {
+  const res = await apiFetch(`/gear/${gearId}/maintenance/`)
+  if (!res.ok) throw new Error('Failed to load maintenance history')
+  const data = await res.json()
+  return data.results ?? data
+}
+
+export async function createGearMaintenanceEntry(
+  gearId: number,
+  entry: { description: string; performed_at: string; distance_at_service_m?: number | null; notes?: string },
+): Promise<GearMaintenanceEntry> {
+  const res = await apiFetch(`/gear/${gearId}/maintenance/`, {
+    method: 'POST',
+    body: JSON.stringify(entry),
+  })
+  if (!res.ok) throw new Error('Failed to add maintenance entry')
+  return res.json()
+}
+
+// --- Dashboard: layout + computed-stat summary ---
+
+export type WidgetKey =
+  | 'eddington_number'
+  | 'streaks'
+  | 'weekly_stats'
+  | 'monthly_stats'
+  | 'yearly_stats'
+  | 'activity_heatmap'
+  | 'training_load'
+  | 'gear_totals'
+
+export interface WidgetConfig {
+  id: string
+  widget: WidgetKey
+  width: 33 | 50 | 66 | 100
+  enabled: boolean
+  config: Record<string, unknown>
+}
+
+export async function getDashboardLayout(): Promise<WidgetConfig[]> {
+  const res = await apiFetch('/dashboard/layout/')
+  if (!res.ok) throw new Error('Failed to load dashboard layout')
+  const data = await res.json()
+  return data.widgets
+}
+
+export async function updateDashboardLayout(widgets: WidgetConfig[]): Promise<WidgetConfig[]> {
+  const res = await apiFetch('/dashboard/layout/', {
+    method: 'PUT',
+    body: JSON.stringify({ widgets }),
+  })
+  if (!res.ok) throw new Error('Failed to save dashboard layout')
+  const data = await res.json()
+  return data.widgets
+}
+
+export interface EddingtonGroup {
+  number: number
+  unit: string
+  activities_counted: number
+  curve: { distance_km: number; count_at_least: number }[]
+}
+
+export interface StreaksStat {
+  current_streak_days: number
+  current_streak_start: string | null
+  longest_streak_days: number
+  longest_streak_start: string | null
+  longest_streak_end: string | null
+  last_activity_date: string | null
+}
+
+export interface PeriodStat {
+  period: string
+  distance_m: number
+  duration_seconds: number
+  elevation_gain_m: number
+  activity_count: number
+  calories: number
+}
+
+export interface ActivityHighlight {
+  id: number
+  name: string
+  activity_type: string
+  start_time_local: string
+  distance_m: number | null
+  duration_seconds: number | null
+  elevation_gain_m: number | null
+}
+
+export interface YearlyStat {
+  year: number
+  distance_m: number
+  duration_seconds: number
+  elevation_gain_m: number
+  activity_count: number
+  calories: number
+  active_days: number
+  highlights: {
+    longest_duration_activity: ActivityHighlight | null
+    most_elevation_gain_activity: ActivityHighlight | null
+    longest_distance_activity: ActivityHighlight | null
+  }
+}
+
+export interface HeatmapDay {
+  date: string
+  count: number
+  duration_minutes: number
+}
+
+export interface TrainingLoadPoint {
+  date: string
+  acute_hours: number
+  chronic_hours: number
+  acwr: number | null
+}
+
+export interface DashboardSummary {
+  eddington_number?: Record<string, EddingtonGroup>
+  streaks?: { all: StreaksStat }
+  weekly_stats?: { current: { periods: PeriodStat[] } }
+  monthly_stats?: { current: { periods: PeriodStat[] } }
+  yearly_stats?: Record<string, YearlyStat>
+  activity_heatmap?: { last_365: { start_date: string; end_date: string; days: HeatmapDay[] } }
+  training_load?: {
+    current: { points: TrainingLoadPoint[]; latest_acwr: number | null; status: string }
+  }
+  _meta: { computed_at: Record<string, string> }
+}
+
+export async function getDashboardSummary(keys: string[]): Promise<DashboardSummary> {
+  const res = await apiFetch(`/dashboard/summary/?stats=${keys.join(',')}`)
+  if (!res.ok) throw new Error('Failed to load dashboard summary')
+  return res.json()
+}
+
+export async function recomputeStats(): Promise<void> {
+  const res = await apiFetch('/dashboard/recompute/', { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to trigger recompute')
+}

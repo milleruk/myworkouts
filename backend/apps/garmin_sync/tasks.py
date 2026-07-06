@@ -199,6 +199,10 @@ def sync_garmin_account(self, account_id: int):
     account.last_error = "Some data failed to sync; see recent syncs." if any_failed else ""
     account.save(update_fields=["status", "last_synced_at", "last_error", "updated_at"])
 
+    from apps.dashboard.tasks import build_stats_for_user
+
+    build_stats_for_user.delay(account.user_id)
+
 
 def _import_activities(client: Garmin, account: GarminAccount) -> int:
     last_activity = (

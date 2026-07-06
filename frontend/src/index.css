@@ -19,3 +19,50 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* dataviz skill reference palette. Chart components read these via var()
+   directly (SVG presentation attributes accept CSS custom properties), so
+   colors swap with the light/dark toggle without any JS-side duplication. */
+.viz-root {
+  --viz-surface: #fcfcfb;
+  --viz-text-primary: #0b0b0b;
+  --viz-text-secondary: #52514e;
+  --viz-muted: #898781;
+  --viz-gridline: #e1e0d9;
+  --viz-baseline: #c3c2b7;
+  --viz-series-1: #2a78d6; /* blue */
+  --viz-series-2: #1baf7a; /* aqua */
+  --viz-series-3: #eda100; /* yellow */
+  --viz-status-good: #0ca30c;
+  --viz-status-warning: #fab219;
+  --viz-status-serious: #ec835a;
+  --viz-status-critical: #d03b3b;
+  --viz-seq-150: #b7d3f6;
+  --viz-seq-250: #86b6ef;
+  --viz-seq-350: #5598e7;
+  --viz-seq-450: #2a78d6;
+  --viz-seq-550: #1c5cab;
+  --viz-seq-650: #104281;
+}
+
+.dark .viz-root {
+  --viz-surface: #1a1a19;
+  --viz-text-primary: #ffffff;
+  --viz-text-secondary: #c3c2b7;
+  --viz-muted: #898781;
+  --viz-gridline: #2c2c2a;
+  --viz-baseline: #383835;
+  --viz-series-1: #3987e5;
+  --viz-series-2: #199e70;
+  --viz-series-3: #c98500;
+  --viz-status-good: #0ca30c;
+  --viz-status-warning: #fab219;
+  --viz-status-serious: #ec835a;
+  --viz-status-critical: #d03b3b;
+  --viz-seq-150: #b7d3f6;
+  --viz-seq-250: #86b6ef;
+  --viz-seq-350: #5598e7;
+  --viz-seq-450: #3987e5;
+  --viz-seq-550: #1c5cab;
+  --viz-seq-650: #104281;
+}

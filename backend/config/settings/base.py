@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "apps.health",
     "apps.gear",
     "apps.garmin_sync",
+    "apps.dashboard",
 ]
 
 MIDDLEWARE = [

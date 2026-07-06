@@ -53,6 +53,11 @@ const icons = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M8 3v4M16 3v4M4 11h16M6 7h12a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2z" />
     </svg>
   ),
+  rewind: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7M20 19l-7-7 7-7" />
+    </svg>
+  ),
   settings: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <circle cx="12" cy="12" r="3" />
@@ -78,6 +83,7 @@ export function Sidebar() {
         <NavItem to="/" label="Dashboard" icon={icons.dashboard} />
         <NavItem to="/activities" label="Activities" icon={icons.activities} />
         <NavItem to="/gear" label="Gear" icon={icons.gear} />
+        <NavItem to="/rewind" label="Rewind" icon={icons.rewind} />
         <NavItem to="/garmin-account" label="Garmin Account" icon={icons.garmin} />
         <NavItem to="/settings" label="Settings" icon={icons.settings} />
       </nav>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getGear, type GearItem } from '../api'
 import { Card } from '../components/Card'
 
@@ -26,24 +27,26 @@ export function Gear() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {gear.map((g) => (
-            <Card key={g.id}>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-slate-900 dark:text-slate-100">{g.name}</span>
-                  {g.is_retired && (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                      Retired
-                    </span>
-                  )}
+            <Link key={g.id} to={`/gear/${g.id}`}>
+              <Card>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-slate-900 dark:text-slate-100">{g.name}</span>
+                    {g.is_retired && (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                        Retired
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    {g.gear_type}
+                  </span>
+                  <span className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    {(g.total_distance_m / 1000).toFixed(0)} km total
+                  </span>
                 </div>
-                <span className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                  {g.gear_type}
-                </span>
-                <span className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                  {(g.total_distance_m / 1000).toFixed(0)} km total
-                </span>
-              </div>
-            </Card>
+              </Card>
+            </Link>
           ))}
         </div>
       )}
