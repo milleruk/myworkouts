@@ -163,3 +163,10 @@ export async function getSyncLogs(): Promise<SyncLog[]> {
   const data = await res.json()
   return data.results ?? data
 }
+
+export async function getActivityCount(): Promise<number> {
+  const res = await apiFetch('/activities/')
+  if (!res.ok) throw new Error('Failed to load activities')
+  const data = await res.json()
+  return data.count ?? (Array.isArray(data) ? data.length : 0)
+}
