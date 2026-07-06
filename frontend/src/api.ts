@@ -93,3 +93,73 @@ export async function getMe(): Promise<Me> {
   if (!res.ok) throw new Error('Failed to load profile')
   return res.json()
 }
+
+export type GarminAccountStatus = 'not_connected' | 'connected' | 'needs_mfa' | 'needs_reauth' | 'error'
+
+export interface GarminAccount {
+  status: GarminAccountStatus
+  garmin_email?: string
+  display_name?: string
+  last_synced_at?: string | null
+  last_error?: string
+}
+
+export interface ConnectResult {
+  status: 'connected' | 'mfa_required' | 'error'
+  pending_login_id?: string
+  message?: string
+}
+
+export async function getGarminAccount(): Promise<GarminAccount> {
+  const res = await apiFetch('/garmin-account/')
+  if (!res.ok) throw new Error('Failed to load Garmin account status')
+  return res.json()
+}
+
+export async function connectGarmin(garmin_email: string, garmin_password: string): Promise<ConnectResult> {
+  const res = await apiFetch('/garmin-account/connect/', {
+    method: 'POST',
+    body: JSON.stringify({ garmin_email, garmin_password }),
+  })
+  if (!res.ok && res.status !== 504) throw new Error('Failed to connect to Garmin')
+  return res.json()
+}
+
+export async function verifyMfa(pending_login_id: string, mfa_code: string): Promise<ConnectResult> {
+  const res = await apiFetch('/garmin-account/verify-mfa/', {
+    method: 'POST',
+    body: JSON.stringify({ pending_login_id, mfa_code }),
+  })
+  if (!res.ok && res.status !== 504) throw new Error('Failed to verify MFA code')
+  return res.json()
+}
+
+export async function disconnectGarmin(): Promise<void> {
+  const res = await apiFetch('/garmin-account/', { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to disconnect Garmin account')
+}
+
+export async function syncNow(): Promise<void> {
+  const res = await apiFetch('/garmin-account/sync/', { method: 'POST' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.message ?? 'Failed to start sync')
+  }
+}
+
+export interface SyncLog {
+  id: number
+  task_type: string
+  started_at: string
+  finished_at: string | null
+  status: string
+  records_imported: number
+  error_message: string
+}
+
+export async function getSyncLogs(): Promise<SyncLog[]> {
+  const res = await apiFetch('/garmin-account/sync-logs/')
+  if (!res.ok) throw new Error('Failed to load sync logs')
+  const data = await res.json()
+  return data.results ?? data
+}

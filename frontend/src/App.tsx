@@ -5,6 +5,7 @@ import { AppShell } from './components/AppShell'
 import { AuthForm } from './components/AuthForm'
 import { Dashboard } from './pages/Dashboard'
 import { Settings } from './pages/Settings'
+import { GarminAccount } from './pages/GarminAccount'
 import { ComingSoon } from './pages/ComingSoon'
 
 function App() {
@@ -45,10 +46,7 @@ function App() {
           element={<ComingSoon title="Activities" phase="Phase 3 (full import + scheduled sync)" />}
         />
         <Route path="gear" element={<ComingSoon title="Gear" phase="Phase 3 (full import + scheduled sync)" />} />
-        <Route
-          path="garmin-account"
-          element={<ComingSoon title="Garmin Account" phase="Phase 2 (Garmin connect flow)" />}
-        />
+        <Route path="garmin-account" element={<GarminAccount />} />
         <Route path="settings" element={<Settings me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

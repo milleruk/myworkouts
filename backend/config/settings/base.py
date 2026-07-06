@@ -21,6 +21,8 @@ INSTALLED_APPS = [
     "django_celery_beat",
     "apps.core",
     "apps.accounts",
+    "apps.activities",
+    "apps.garmin_sync",
 ]
 
 MIDDLEWARE = [
@@ -114,5 +116,21 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
-# Fernet key for encrypting Garmin credentials/tokens at rest (apps.garmin_sync, added in Phase 2)
+# start_garmin_login / complete_garmin_login / purge_stale_pending_logins MUST
+# run on the single-process, unscaled garmin_auth worker -- see
+# apps/garmin_sync/services/pending_logins.py for why.
+CELERY_TASK_ROUTES = {
+    "apps.garmin_sync.tasks.start_garmin_login": {"queue": "garmin_auth"},
+    "apps.garmin_sync.tasks.complete_garmin_login": {"queue": "garmin_auth"},
+    "apps.garmin_sync.tasks.purge_stale_pending_logins": {"queue": "garmin_auth"},
+}
+
+CELERY_BEAT_SCHEDULE = {
+    "purge-stale-pending-logins": {
+        "task": "apps.garmin_sync.tasks.purge_stale_pending_logins",
+        "schedule": 300.0,
+    },
+}
+
+# Fernet key for encrypting Garmin credentials/tokens at rest
 GARMIN_CREDENTIAL_ENCRYPTION_KEY = config("GARMIN_CREDENTIAL_ENCRYPTION_KEY", default="")
