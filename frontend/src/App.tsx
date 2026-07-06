@@ -6,7 +6,8 @@ import { AuthForm } from './components/AuthForm'
 import { Dashboard } from './pages/Dashboard'
 import { Settings } from './pages/Settings'
 import { GarminAccount } from './pages/GarminAccount'
-import { ComingSoon } from './pages/ComingSoon'
+import { Activities } from './pages/Activities'
+import { Gear } from './pages/Gear'
 
 function App() {
   const [me, setMe] = useState<Me | null>(null)
@@ -41,11 +42,8 @@ function App() {
     <Routes>
       <Route element={<AppShell me={me} onLogout={handleLogout} />}>
         <Route index element={<Dashboard me={me} />} />
-        <Route
-          path="activities"
-          element={<ComingSoon title="Activities" phase="Phase 3 (full import + scheduled sync)" />}
-        />
-        <Route path="gear" element={<ComingSoon title="Gear" phase="Phase 3 (full import + scheduled sync)" />} />
+        <Route path="activities" element={<Activities />} />
+        <Route path="gear" element={<Gear />} />
         <Route path="garmin-account" element={<GarminAccount />} />
         <Route path="settings" element={<Settings me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />

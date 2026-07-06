@@ -170,3 +170,46 @@ export async function getActivityCount(): Promise<number> {
   const data = await res.json()
   return data.count ?? (Array.isArray(data) ? data.length : 0)
 }
+
+export interface Activity {
+  id: number
+  garmin_activity_id: number
+  activity_type: string
+  name: string
+  start_time_local: string
+  duration_seconds: number | null
+  distance_m: number | null
+  elevation_gain_m: number | null
+  average_hr: number | null
+  max_hr: number | null
+  calories: number | null
+}
+
+export interface Paginated<T> {
+  count: number
+  next: string | null
+  previous: string | null
+  results: T[]
+}
+
+export async function getActivities(page = 1): Promise<Paginated<Activity>> {
+  const res = await apiFetch(`/activities/?page=${page}`)
+  if (!res.ok) throw new Error('Failed to load activities')
+  return res.json()
+}
+
+export interface GearItem {
+  id: number
+  name: string
+  gear_type: string
+  is_retired: boolean
+  total_distance_m: number
+  total_duration_seconds: number
+}
+
+export async function getGear(): Promise<GearItem[]> {
+  const res = await apiFetch('/gear/')
+  if (!res.ok) throw new Error('Failed to load gear')
+  const data = await res.json()
+  return data.results ?? data
+}
